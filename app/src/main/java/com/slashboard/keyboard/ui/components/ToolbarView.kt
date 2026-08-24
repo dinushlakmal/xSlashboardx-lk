@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Mood
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -41,7 +40,6 @@ fun ToolbarView(
     modifier: Modifier = Modifier,
     onOpenClipboard: () -> Unit,
     onOpenEmoji: () -> Unit,
-    onCycleTheme: () -> Unit,
     onCycleLayout: () -> Unit,
     onCursorLeft: () -> Unit,
     onCursorRight: () -> Unit,
@@ -75,14 +73,6 @@ fun ToolbarView(
                 theme = theme,
                 testTag = "toolbar_emoji",
                 onClick = onOpenEmoji
-            )
-
-            ToolbarIconButton(
-                icon = Icons.Default.Palette,
-                contentDescription = "Theme",
-                theme = theme,
-                testTag = "toolbar_theme",
-                onClick = onCycleTheme
             )
 
             // Layout indicator badge / toggle

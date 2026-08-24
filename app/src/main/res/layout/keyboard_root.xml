@@ -1,28 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    android:id="@+id/keyboard_root"
+    android:id="@+id/keyboard_root_container"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#1E1E2C">
+    android:background="#1E1E2C"
+    android:clipChildren="true"
+    android:clipToPadding="true">
 
     <!-- Layer 0: Root Container Background with Wallpaper & Dim View -->
     <ImageView
-        android:id="@+id/wallpaper_view"
+        android:id="@+id/keyboard_bg_image"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="centerCrop"
+        android:adjustViewBounds="false"
         android:visibility="gone"
         android:contentDescription="@null" />
 
     <View
-        android:id="@+id/dim_view"
+        android:background="#000000" android:id="@+id/keyboard_bg_dim"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
 
+    <include layout="@layout/voice_overlay_view" />
+
     <!-- Main Vertical Layout for Rows 0 to 6 -->
     <LinearLayout
+        android:id="@+id/main_keyboard_view"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
@@ -31,16 +37,16 @@
         android:paddingTop="2dp"
         android:paddingBottom="6dp">
 
-        <!-- ROW 0: Topmost Dynamic Header (42dp Height) -->
+        <!-- ROW 0: Dual-Layer Smartbar (42dp Height) -->
         <FrameLayout
-            android:id="@+id/dynamic_top_bar"
+            android:id="@+id/smartbar_container"
             android:layout_width="match_parent"
             android:layout_height="42dp"
             android:layout_marginBottom="2dp">
 
-            <!-- 1. Utility & Settings Bar (Default Visible) -->
+            <!-- LAYER A: IDLE SMARTBAR -->
             <LinearLayout
-                android:id="@+id/utility_settings_bar"
+                android:id="@+id/smartbar_idle_layer"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="horizontal"
@@ -48,97 +54,37 @@
                 android:visibility="visible"
                 android:alpha="1.0">
 
-                <!-- [En] Language Toggle Chip -->
-                <TextView
-                    android:id="@+id/btn_lang_toggle"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="En"
-                    android:textColor="#FFFFFF"
-                    android:textSize="13sp"
-                    android:textStyle="bold"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Language Toggle" />
+                <!-- Quick Action Icons -->
+                <LinearLayout
+                    android:id="@+id/smartbar_action_icons_container"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:paddingStart="4dp">
+                </LinearLayout>
 
-                <!-- [Emoji] Utility Chip -->
-                <ImageView
-                    android:id="@+id/btn_utility_emoji"
+                <!-- Frequent Emojis -->
+                <HorizontalScrollView
+                    android:id="@+id/emoji_scroll_view"
                     android:layout_width="0dp"
-                    android:layout_height="34dp"
+                    android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:padding="7dp"
-                    android:src="@drawable/ic_emoji_smile"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Emoji" />
+                    android:scrollbars="none">
 
-                <!-- [Settings] Utility Chip -->
-                <ImageView
-                    android:id="@+id/btn_utility_settings"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:padding="7dp"
-                    android:src="@drawable/ic_settings_gear"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Settings" />
-
-                <!-- [Aa] Font/Case Utility Chip -->
-                <ImageView
-                    android:id="@+id/btn_utility_case"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:padding="7dp"
-                    android:src="@drawable/ic_text_format"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Font / Case" />
-
-                <!-- [Mic] Voice Input Utility Chip -->
-                <ImageView
-                    android:id="@+id/btn_utility_mic"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:padding="7dp"
-                    android:src="@drawable/ic_mic"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Voice Input" />
-
-                <!-- [Clipboard] Utility Chip -->
-                <ImageView
-                    android:id="@+id/btn_utility_clipboard"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:padding="7dp"
-                    android:src="@drawable/ic_content_paste"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Clipboard" />
-
-                <!-- [Collapse] Utility Chip -->
-                <ImageView
-                    android:id="@+id/btn_utility_collapse"
-                    android:layout_width="0dp"
-                    android:layout_height="34dp"
-                    android:layout_weight="1"
-                    android:padding="7dp"
-                    android:src="@drawable/ic_keyboard_hide"
-                    android:background="@drawable/bg_utility_icon"
-                    android:layout_marginHorizontal="2dp"
-                    android:contentDescription="Hide Keyboard" />
+                    <LinearLayout
+                        android:id="@+id/recent_emoji_container"
+                        android:layout_width="wrap_content"
+                        android:layout_height="match_parent"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingHorizontal="4dp" />
+                </HorizontalScrollView>
             </LinearLayout>
 
-            <!-- 2. Word Suggestion Bar (Default Gone, Dynamic Cross-fade on typing) -->
+            <!-- LAYER B: TYPING SUGGESTIONS -->
             <HorizontalScrollView
-                android:id="@+id/word_suggestion_bar"
+                android:id="@+id/smartbar_suggestion_layer"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:visibility="gone"
@@ -155,23 +101,6 @@
                     android:paddingHorizontal="4dp" />
             </HorizontalScrollView>
         </FrameLayout>
-
-        <!-- ROW 1: Dedicated Frequently Used Emoji Bar (36dp Height - Permanently Visible) -->
-        <HorizontalScrollView
-            android:id="@+id/emoji_quick_bar"
-            android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:scrollbars="none"
-            android:layout_marginBottom="3dp">
-
-            <LinearLayout
-                android:id="@+id/emoji_container"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="2dp" />
-        </HorizontalScrollView>
 
         <!-- ROW 2: Dedicated Number Row (42dp Height) -->
         <LinearLayout

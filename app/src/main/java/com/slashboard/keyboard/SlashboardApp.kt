@@ -24,6 +24,7 @@ class SlashboardApp : Application() {
         // Schedule background cloud dictionary sync worker
         try {
             com.slashboard.keyboard.data.worker.DictionarySyncWorker.schedule(this)
+            com.slashboard.keyboard.service.VoiceModelDownloader.checkAndDownloadModels(this)
         } catch (_: Throwable) {}
     }
 

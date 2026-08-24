@@ -1,5 +1,6 @@
 package com.slashboard.keyboard.ui.screens
 
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -187,20 +188,26 @@ fun SettingsScreen(
                     ) {
                         Column {
                             Text(
-                                text = "Keyboard Height Scale",
+                                text = "Overall Keyboard Height",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            val heightPresetDesc = when {
+                                settings.heightScale <= 0.85f -> "Compact / Short"
+                                settings.heightScale in 0.86f..1.05f -> "Standard (Default)"
+                                settings.heightScale in 1.06f..1.20f -> "Tall"
+                                else -> "Extra Tall"
+                            }
                             Text(
-                                text = "Adjust vertical key size",
+                                text = "$heightPresetDesc • ~${(270 * settings.heightScale).toInt()} dp",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                         }
                         Text(
                             text = "${(settings.heightScale * 100).toInt()}%",
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -209,13 +216,76 @@ fun SettingsScreen(
                     Slider(
                         value = settings.heightScale,
                         onValueChange = { prefs.updateHeightScale(it) },
-                        valueRange = 0.8f..1.3f,
-                        steps = 5,
+                        valueRange = 0.70f..1.40f,
                         colors = SliderDefaults.colors(
                             thumbColor = MaterialTheme.colorScheme.primary,
                             activeTrackColor = MaterialTheme.colorScheme.primary
                         ),
                         modifier = Modifier.testTag("height_slider")
+                    )
+
+                    // Quick Height Presets Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        listOf(
+                            0.80f to "80% (Short)",
+                            1.00f to "100% (Default)",
+                            1.15f to "115% (Tall)",
+                            1.30f to "130% (Max)"
+                        ).forEach { (scale, label) ->
+                            val isSelected = Math.abs(settings.heightScale - scale) < 0.04f
+                            Text(
+                                text = label,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { prefs.updateHeightScale(scale) }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "IME Bottom Space Padding",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Manual bottom spacing for navigation bar",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                        Text(
+                            text = "${settings.bottomSpaceHeight} dp",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Slider(
+                        value = settings.bottomSpaceHeight.toFloat(),
+                        onValueChange = { prefs.updateBottomSpaceHeight(it.toInt()) },
+                        valueRange = 0f..80f,
+                        steps = 80,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.testTag("bottom_space_slider")
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -256,6 +326,75 @@ fun SettingsScreen(
                             activeTrackColor = MaterialTheme.colorScheme.primary
                         ),
                         modifier = Modifier.testTag("radius_slider")
+                    )
+
+                    // Key Background Transparency Slider
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Key Background Opacity",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Adjust how solid the keys appear",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                        Text(
+                            text = "${(settings.keyBackgroundAlpha * 100).toInt()}%",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Slider(
+                        value = settings.keyBackgroundAlpha,
+                        onValueChange = { prefs.updateKeyBackgroundAlpha(it) },
+                        valueRange = 0.0f..1.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+
+                    // Key Border Transparency Slider
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Key Border Opacity",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Text(
+                            text = "${(settings.keyBorderAlpha * 100).toInt()}%",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Slider(
+                        value = settings.keyBorderAlpha,
+                        onValueChange = { prefs.updateKeyBorderAlpha(it) },
+                        valueRange = 0.0f..1.0f,
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
                     )
                 }
             }
@@ -351,7 +490,16 @@ fun SettingsScreen(
                         testTag = "toggle_toolbar",
                         onCheckedChange = { prefs.updateToolbarVisible(it) }
                     )
-
+                    if (settings.toolbarVisible) {
+                        SettingsActionRow(
+                            title = "Customize Smartbar",
+                            subtitle = "Drag and drop to arrange action buttons",
+                            onClick = {
+                                val intent = android.content.Intent(context, com.slashboard.keyboard.SmartbarSettingsActivity::class.java)
+                                context.startActivity(intent)
+                            }
+                        )
+                    }
                     SettingsToggleRow(
                         title = "Dedicated Number Row",
                         subtitle = "Always show 1-0 numeric keys row above letters",
@@ -429,6 +577,41 @@ private fun SettingsCategoryHeader(title: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
     )
+}
+
+@Composable
+private fun SettingsActionRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = title,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = "Navigate",
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+    }
 }
 
 @Composable

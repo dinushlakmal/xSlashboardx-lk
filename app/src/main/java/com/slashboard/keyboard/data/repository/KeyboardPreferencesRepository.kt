@@ -23,20 +23,58 @@ data class KeyboardSettings(
     val showNumberRow: Boolean = false,
     val showSecondaryLabels: Boolean = true,
     val toolbarVisible: Boolean = true,
+    val bottomSpaceHeight: Int = 0,
     val keyCornerRadius: Int = 8,
+    val keyBackgroundAlpha: Float = 1.0f,
+    val keyBorderAlpha: Float = 1.0f,
     val showKeyBorders: Boolean = true,
     val customWallpaperPath: String? = null,
     val wallpaperDim: Float = 0.45f,
-    val hasCompletedSetup: Boolean = false
+    val hasCompletedSetup: Boolean = false,
+    val smartbarActiveActions: List<String> = emptyList(),
+    val smartbarDisabledActions: List<String> = emptyList()
 )
 
 class KeyboardPreferencesRepository(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val _settingsFlow = MutableStateFlow(loadSettings())
     val settingsFlow: StateFlow<KeyboardSettings> = _settingsFlow.asStateFlow()
 
     private fun loadSettings(): KeyboardSettings {
+        val defaultPrefs = android.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+        val bordersVal = if (defaultPrefs.contains("key_borders_enabled")) {
+            defaultPrefs.getBoolean("key_borders_enabled", false)
+        } else if (prefs.contains("key_borders_enabled")) {
+            prefs.getBoolean("key_borders_enabled", false)
+        } else if (prefs.contains(KEY_KEY_BORDERS)) {
+            prefs.getBoolean(KEY_KEY_BORDERS, true)
+        } else {
+            true
+        }
+        val heightScaleVal = if (defaultPrefs.contains("keyboard_height_scale")) {
+            defaultPrefs.getFloat("keyboard_height_scale", 1.0f)
+        } else if (prefs.contains("keyboard_height_scale")) {
+            prefs.getFloat("keyboard_height_scale", 1.0f)
+        } else {
+            prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f)
+        }
+        val activeActionsStr = prefs.getString(KEY_SMARTBAR_ACTIVE, null)
+        val disabledActionsStr = prefs.getString(KEY_SMARTBAR_DISABLED, null)
+        
+        val activeActions = if (activeActionsStr != null) {
+            activeActionsStr.split(",").filter { it.isNotEmpty() }
+        } else {
+            listOf("language_switch", "emoji", "settings", "clipboard", "voice_mic")
+        }
+        
+        val disabledActions = if (disabledActionsStr != null) {
+            disabledActionsStr.split(",").filter { it.isNotEmpty() }
+        } else {
+            listOf("theme_picker", "text_edit", "collapse")
+        }
+
         return KeyboardSettings(
             themeId = prefs.getString(KEY_THEME_ID, "cyber_violet") ?: "cyber_violet",
             layoutId = prefs.getString(KEY_LAYOUT_ID, "qwerty") ?: "qwerty",
@@ -44,7 +82,7 @@ class KeyboardPreferencesRepository(context: Context) {
             hapticIntensity = prefs.getInt(KEY_HAPTIC_INTENSITY, 50),
             soundFeedback = prefs.getBoolean(KEY_SOUND, false),
             popupOnKeypress = prefs.getBoolean(KEY_POPUP, true),
-            heightScale = prefs.getFloat(KEY_HEIGHT_SCALE, 1.0f),
+            heightScale = heightScaleVal,
             autoCapitalization = prefs.getBoolean(KEY_AUTO_CAP, true),
             doubleSpacePeriod = prefs.getBoolean(KEY_DOUBLE_SPACE, true),
             autoCorrect = prefs.getBoolean(KEY_AUTO_CORRECT, true),
@@ -52,10 +90,14 @@ class KeyboardPreferencesRepository(context: Context) {
             showSecondaryLabels = prefs.getBoolean(KEY_SECONDARY_LABELS, true),
             toolbarVisible = prefs.getBoolean(KEY_TOOLBAR, true),
             keyCornerRadius = prefs.getInt(KEY_KEY_RADIUS, 8),
-            showKeyBorders = prefs.getBoolean(KEY_KEY_BORDERS, true),
+            keyBackgroundAlpha = prefs.getFloat("key_bg_alpha", 1.0f),
+            keyBorderAlpha = prefs.getFloat("key_border_alpha", 1.0f),
+            showKeyBorders = bordersVal,
             customWallpaperPath = prefs.getString(KEY_CUSTOM_WALLPAPER, null),
             wallpaperDim = prefs.getFloat(KEY_WALLPAPER_DIM, 0.45f),
-            hasCompletedSetup = prefs.getBoolean(KEY_HAS_COMPLETED_SETUP, false)
+            hasCompletedSetup = prefs.getBoolean(KEY_HAS_COMPLETED_SETUP, false),
+            smartbarActiveActions = activeActions,
+            smartbarDisabledActions = disabledActions
         )
     }
 
@@ -90,8 +132,18 @@ class KeyboardPreferencesRepository(context: Context) {
     }
 
     fun updateHeightScale(scale: Float) {
-        val clamped = scale.coerceIn(0.8f, 1.3f)
-        prefs.edit().putFloat(KEY_HEIGHT_SCALE, clamped).apply()
+        val clamped = (scale.coerceIn(0.70f, 1.40f) * 100).toInt() / 100f
+        prefs.edit()
+            .putFloat(KEY_HEIGHT_SCALE, clamped)
+            .putFloat("keyboard_height_scale", clamped)
+            .apply()
+        try {
+            android.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+                .edit()
+                .putFloat(KEY_HEIGHT_SCALE, clamped)
+                .putFloat("keyboard_height_scale", clamped)
+                .apply()
+        } catch (_: Throwable) {}
         _settingsFlow.value = _settingsFlow.value.copy(heightScale = clamped)
     }
 
@@ -131,8 +183,28 @@ class KeyboardPreferencesRepository(context: Context) {
         _settingsFlow.value = _settingsFlow.value.copy(keyCornerRadius = clamped)
     }
 
+    fun updateKeyBackgroundAlpha(alpha: Float) {
+        prefs.edit().putFloat("key_bg_alpha", alpha).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(keyBackgroundAlpha = alpha)
+    }
+
+    fun updateKeyBorderAlpha(alpha: Float) {
+        prefs.edit().putFloat("key_border_alpha", alpha).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(keyBorderAlpha = alpha)
+    }
+
     fun updateShowKeyBorders(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_KEY_BORDERS, enabled).apply()
+        prefs.edit()
+            .putBoolean(KEY_KEY_BORDERS, enabled)
+            .putBoolean("key_borders_enabled", enabled)
+            .apply()
+        try {
+            android.preference.PreferenceManager.getDefaultSharedPreferences(appContext)
+                .edit()
+                .putBoolean("key_borders_enabled", enabled)
+                .putBoolean(KEY_KEY_BORDERS, enabled)
+                .apply()
+        } catch (_: Throwable) {}
         _settingsFlow.value = _settingsFlow.value.copy(showKeyBorders = enabled)
     }
 
@@ -156,6 +228,24 @@ class KeyboardPreferencesRepository(context: Context) {
         _settingsFlow.value = _settingsFlow.value.copy(hasCompletedSetup = completed)
     }
 
+    fun updateBottomSpaceHeight(height: Int) {
+        prefs.edit().putInt(KEY_BOTTOM_SPACE, height).apply()
+        _settingsFlow.value = _settingsFlow.value.copy(bottomSpaceHeight = height)
+    }
+
+    fun updateSmartbarActions(active: List<String>, disabled: List<String>) {
+        val activeStr = active.joinToString(",")
+        val disabledStr = disabled.joinToString(",")
+        prefs.edit()
+            .putString(KEY_SMARTBAR_ACTIVE, activeStr)
+            .putString(KEY_SMARTBAR_DISABLED, disabledStr)
+            .apply()
+        _settingsFlow.value = _settingsFlow.value.copy(
+            smartbarActiveActions = active,
+            smartbarDisabledActions = disabled
+        )
+    }
+
     fun hasCompletedSetup(): Boolean {
         return prefs.getBoolean(KEY_HAS_COMPLETED_SETUP, false)
     }
@@ -165,7 +255,13 @@ class KeyboardPreferencesRepository(context: Context) {
         val baseTheme = KeyboardTheme.getThemeById(currentThemeId)
         val showBorders = _settingsFlow.value.showKeyBorders
         val borderColor = if (showBorders) {
-            if (baseTheme.keyBorderColor != Color.Transparent) baseTheme.keyBorderColor else Color(0x33FFFFFF)
+            if (baseTheme.keyBorderColor != Color.Transparent) {
+                baseTheme.keyBorderColor
+            } else if (baseTheme.isDark) {
+                Color(0x66FFFFFF)
+            } else {
+                Color(0x40000000)
+            }
         } else {
             Color.Transparent
         }
@@ -199,5 +295,8 @@ class KeyboardPreferencesRepository(context: Context) {
         private const val KEY_CUSTOM_WALLPAPER = "custom_wallpaper_path"
         private const val KEY_WALLPAPER_DIM = "wallpaper_dim_alpha"
         private const val KEY_HAS_COMPLETED_SETUP = "has_completed_setup"
+        private const val KEY_BOTTOM_SPACE = "bottom_space"
+        private const val KEY_SMARTBAR_ACTIVE = "smartbar_active_actions"
+        private const val KEY_SMARTBAR_DISABLED = "smartbar_disabled_actions"
     }
 }

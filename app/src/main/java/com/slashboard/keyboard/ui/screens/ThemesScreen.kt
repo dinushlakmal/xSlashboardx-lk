@@ -299,6 +299,53 @@ fun ThemesScreen() {
                                     modifier = Modifier.testTag("theme_key_borders_switch")
                                 )
                             }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Interactive Live Keyboard Preview
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surface)
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "LIVE KEYBOARD PREVIEW",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = if (previewText.isEmpty()) "Tap keys to test" else previewText,
+                                            fontSize = 12.sp,
+                                            color = if (previewText.isEmpty()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f) else MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+
+                                VirtualKeyboard(
+                                    settings = settings,
+                                    currentWord = previewText,
+                                    fullText = previewText,
+                                    onInsertText = { text -> previewText += text },
+                                    onDeleteCharacter = { if (previewText.isNotEmpty()) previewText = previewText.dropLast(1) },
+                                    onEnter = { previewText += "\n" },
+                                    onClearText = { previewText = "" },
+                                    onOpenSettings = {}
+                                )
+                            }
                         }
                     }
                 }

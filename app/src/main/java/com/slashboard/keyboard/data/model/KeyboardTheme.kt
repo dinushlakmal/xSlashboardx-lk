@@ -30,7 +30,7 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFFF3F4F6),
             secondaryTextColor = Color(0xFF9CA3AF),
             accentColor = Color(0xFFA855F7),
-            keyBorderColor = Color(0x33A855F7),
+            keyBorderColor = Color(0x88A855F7),
             keyRadiusDp = 8
         )
 
@@ -46,7 +46,7 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFFFFFFFF),
             secondaryTextColor = Color(0xFF888888),
             accentColor = Color(0xFF38BDF8),
-            keyBorderColor = Color(0x22FFFFFF),
+            keyBorderColor = Color(0x66FFFFFF),
             keyRadiusDp = 8
         )
 
@@ -62,7 +62,7 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFFFDE2F3),
             secondaryTextColor = Color(0xFFE5B8F4),
             accentColor = Color(0xFFF39F5A),
-            keyBorderColor = Color(0x33F39F5A),
+            keyBorderColor = Color(0x88F39F5A),
             keyRadiusDp = 10
         )
 
@@ -78,7 +78,7 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFFE6F4EA),
             secondaryTextColor = Color(0xFFA3D9C9),
             accentColor = Color(0xFF34D399),
-            keyBorderColor = Color(0x3334D399),
+            keyBorderColor = Color(0x8834D399),
             keyRadiusDp = 8
         )
 
@@ -94,7 +94,7 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFFF1F5F9),
             secondaryTextColor = Color(0xFF94A3B8),
             accentColor = Color(0xFF38BDF8),
-            keyBorderColor = Color(0x3338BDF8),
+            keyBorderColor = Color(0x8838BDF8),
             keyRadiusDp = 8
         )
 
@@ -110,7 +110,7 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFF0F172A),
             secondaryTextColor = Color(0xFF64748B),
             accentColor = Color(0xFF7C3AED),
-            keyBorderColor = Color(0x1E000000),
+            keyBorderColor = Color(0x40000000),
             keyRadiusDp = 8
         )
 
@@ -126,8 +126,88 @@ data class KeyboardTheme(
             keyTextColor = Color(0xFF881337),
             secondaryTextColor = Color(0xFF9F1239),
             accentColor = Color(0xFFFB7185),
-            keyBorderColor = Color(0x22FB7185),
+            keyBorderColor = Color(0x66FB7185),
             keyRadiusDp = 10
+        )
+
+        val GlassDark = KeyboardTheme(
+            id = "glass_dark",
+            name = "Glass Dark",
+            isDark = true,
+            background = Color(0x80000000),
+            surface = Color(0x40FFFFFF),
+            keyBackground = Color(0x33FFFFFF),
+            keyPressedBackground = Color(0x66FFFFFF),
+            functionalKeyBackground = Color(0x1AFFFFFF),
+            keyTextColor = Color(0xFFFFFFFF),
+            secondaryTextColor = Color(0xB3FFFFFF),
+            accentColor = Color(0xFF38BDF8),
+            keyBorderColor = Color(0x1AFFFFFF),
+            keyRadiusDp = 12
+        )
+
+        val GlassLight = KeyboardTheme(
+            id = "glass_light",
+            name = "Glass Light",
+            isDark = false,
+            background = Color(0x80FFFFFF),
+            surface = Color(0x40000000),
+            keyBackground = Color(0x99FFFFFF),
+            keyPressedBackground = Color(0xCCFFFFFF),
+            functionalKeyBackground = Color(0x66FFFFFF),
+            keyTextColor = Color(0xFF000000),
+            secondaryTextColor = Color(0x99000000),
+            accentColor = Color(0xFF7C3AED),
+            keyBorderColor = Color(0x1A000000),
+            keyRadiusDp = 12
+        )
+
+        val NeonCyanGlass = KeyboardTheme(
+            id = "neon_cyan_glass",
+            name = "Neon Cyan Glass",
+            isDark = true,
+            background = Color(0x66001219),
+            surface = Color(0x33005F73),
+            keyBackground = Color(0x4D0A9396),
+            keyPressedBackground = Color(0x8094D2BD),
+            functionalKeyBackground = Color(0x33005F73),
+            keyTextColor = Color(0xFFE9D8A6),
+            secondaryTextColor = Color(0xB3E9D8A6),
+            accentColor = Color(0xFF0A9396),
+            keyBorderColor = Color(0x330A9396),
+            keyRadiusDp = 10
+        )
+
+        val HackerMatrixGlass = KeyboardTheme(
+            id = "hacker_matrix_glass",
+            name = "Matrix Glass",
+            isDark = true,
+            background = Color(0x80001A00),
+            surface = Color(0x40003300),
+            keyBackground = Color(0x33004D00),
+            keyPressedBackground = Color(0x66009900),
+            functionalKeyBackground = Color(0x1A003300),
+            keyTextColor = Color(0xFF00FF00),
+            secondaryTextColor = Color(0xB300FF00),
+            accentColor = Color(0xFF00FF00),
+            keyBorderColor = Color(0x3300FF00),
+            keyRadiusDp = 8
+        )
+
+        val FrostedPlum = KeyboardTheme(
+            id = "frosted_plum",
+            name = "Frosted Plum",
+            isDark = true,
+            background = Color(0x8023152F),
+            surface = Color(0x403A2649),
+            keyBackground = Color(0x4D4F3566),
+            keyPressedBackground = Color(0x806A4C87),
+            functionalKeyBackground = Color(0x333A2649),
+            keyTextColor = Color(0xFFF3E8FF),
+            secondaryTextColor = Color(0xB3F3E8FF),
+            accentColor = Color(0xFFC084FC),
+            keyBorderColor = Color(0x33C084FC),
+            keyRadiusDp = 14
         )
 
         val PresetThemes = listOf(
@@ -137,7 +217,12 @@ data class KeyboardTheme(
             EmeraldForest,
             ElectricBlue,
             CleanLight,
-            PastelCoral
+            PastelCoral,
+            GlassDark,
+            GlassLight,
+            NeonCyanGlass,
+            HackerMatrixGlass,
+            FrostedPlum
         )
 
         fun getThemeById(id: String): KeyboardTheme {

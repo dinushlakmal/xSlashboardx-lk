@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.READ_USER_DICTIONARY" />
     <uses-permission android:name="android.permission.WRITE_USER_DICTIONARY" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <queries>
         <intent>
@@ -39,6 +40,17 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SmartbarSettingsActivity"
+            android:exported="false"
+            android:label="Smartbar Customizer"
+            android:theme="@style/Theme.Slashboard" />
+
+        <activity
+            android:name=".VoicePermissionActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:exported="false" />
+            
         <!-- Android Input Method Service (IME) -->
         <service
             android:name=".service.SinhalaIME"

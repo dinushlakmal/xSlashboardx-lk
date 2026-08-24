@@ -101,6 +101,12 @@ fun KeyView(
 
     val shape = RoundedCornerShape(theme.keyRadiusDp.dp)
 
+    val borderModifier = if (theme.keyBorderColor != Color.Transparent && theme.keyBorderColor.alpha > 0.01f) {
+        Modifier.border(width = 1.3.dp, color = theme.keyBorderColor, shape = shape)
+    } else {
+        Modifier
+    }
+
     Box(
         modifier = modifier
             .height(height)
@@ -108,11 +114,7 @@ fun KeyView(
             .scale(scale)
             .clip(shape)
             .background(keyBg)
-            .then(
-                if (theme.keyBorderColor != Color.Transparent) {
-                    Modifier.border(1.dp, theme.keyBorderColor, shape)
-                } else Modifier
-            )
+            .then(borderModifier)
             .then(
                 if (key.code == KeyCode.SPACE) {
                     // Custom robust gesture detector for spacebar: handles instant taps AND drag slides

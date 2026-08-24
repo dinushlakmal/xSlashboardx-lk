@@ -110,7 +110,7 @@ fun PlaygroundScreen(
     }
 
     val isFullyActive = isImeEnabled && isImeSelected
-    val activeTheme = remember(settings.themeId, settings.keyCornerRadius) {
+    val activeTheme = remember(settings.themeId, settings.keyCornerRadius, settings.showKeyBorders) {
         prefs.getActiveTheme()
     }
     val activeLayout = remember(settings.layoutId) {

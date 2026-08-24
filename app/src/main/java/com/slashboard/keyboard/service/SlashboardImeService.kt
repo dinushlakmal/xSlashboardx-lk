@@ -4,13 +4,23 @@ import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import androidx.activity.OnBackPressedDispatcher
+import androidx.activity.OnBackPressedDispatcherOwner
+import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -35,14 +45,19 @@ import com.slashboard.keyboard.ui.theme.SlashboardTheme
 class SlashboardImeService : InputMethodService(),
     LifecycleOwner,
     ViewModelStoreOwner,
-    SavedStateRegistryOwner {
+    SavedStateRegistryOwner,
+    OnBackPressedDispatcherOwner {
 
     private val lifecycleRegistry: LifecycleRegistry = LifecycleRegistry(this)
     private val savedStateRegistryController: SavedStateRegistryController = SavedStateRegistryController.create(this)
     private val vmStore: ViewModelStore = ViewModelStore()
-
+    
     // Composing state buffer for Singlish phonetic typing
     private val composingBuffer = StringBuilder()
+    
+    private val backDispatcher = OnBackPressedDispatcher {
+        requestHideSelf(0)
+    }
 
     override val lifecycle: Lifecycle
         get() = lifecycleRegistry
@@ -52,6 +67,9 @@ class SlashboardImeService : InputMethodService(),
 
     override val savedStateRegistry: SavedStateRegistry
         get() = savedStateRegistryController.savedStateRegistry
+        
+    override val onBackPressedDispatcher: OnBackPressedDispatcher
+        get() = backDispatcher
 
     private val preferencesRepository: KeyboardPreferencesRepository by lazy {
         try {
@@ -74,6 +92,7 @@ class SlashboardImeService : InputMethodService(),
             targetView.setViewTreeLifecycleOwner(this)
             targetView.setViewTreeSavedStateRegistryOwner(this)
             targetView.setViewTreeViewModelStoreOwner(this)
+            targetView.setViewTreeOnBackPressedDispatcherOwner(this)
         } catch (_: Throwable) {}
     }
 
@@ -120,13 +139,15 @@ class SlashboardImeService : InputMethodService(),
                     var currentContext by remember { mutableStateOf("" to "") }
                     val isSinglish = settings.layoutId == "sinhala_singlish"
 
-                    VirtualKeyboard(
-                        settings = settings,
-                        currentWord = if (isSinglish && composingBuffer.isNotEmpty()) composingBuffer.toString() else currentContext.second,
-                        fullText = currentContext.first,
-                        onInsertText = { text ->
+                    Column {
+                        VirtualKeyboard(
+                            settings = settings,
+                            currentWord = if (isSinglish && composingBuffer.isNotEmpty()) composingBuffer.toString() else currentContext.second,
+                            fullText = currentContext.first,
+                            onInsertText = { text ->
                             try {
                                 val ic = currentInputConnection ?: return@VirtualKeyboard
+                                val um = com.slashboard.keyboard.data.repository.UserLearningManager.getInstance(this@SlashboardImeService)
                                 if (isSinglish) {
                                     // Check if standard alphanumeric Latin character for Singlish composing
                                     if (text.length == 1 && (text[0].isLetter() || text[0] == '.' || text[0] == '\'')) {
@@ -135,11 +156,22 @@ class SlashboardImeService : InputMethodService(),
                                         ic.setComposingText(transliterated, 1)
                                     } else {
                                         // Non-alphabetic token -> commit composing buffer then insert
+                                        val prefix = composingBuffer.toString()
+                                        val wordToCommit = if (prefix.isNotEmpty()) HelakuruSinglishParser.parse(prefix) else ""
                                         commitComposingText()
+                                        if (wordToCommit.isNotEmpty()) {
+                                            um.onWordCommitted(wordToCommit, prefix)
+                                        }
                                         ic.commitText(text, 1)
+                                        if (text.isBlank() || !text[0].isLetter()) {
+                                            um.onSpaceOrPunctuation(text)
+                                        }
                                     }
                                 } else {
                                     ic.commitText(text, 1)
+                                    if (text.isBlank() || !text[0].isLetter()) {
+                                        um.onSpaceOrPunctuation(text)
+                                    }
                                 }
                                 currentContext = extractCurrentContext()
                             } catch (_: Throwable) {}
@@ -169,14 +201,18 @@ class SlashboardImeService : InputMethodService(),
                         onReplaceWord = { oldWord, newWord ->
                             try {
                                 val ic = currentInputConnection ?: return@VirtualKeyboard
+                                val um = com.slashboard.keyboard.data.repository.UserLearningManager.getInstance(this@SlashboardImeService)
                                 if (isSinglish && composingBuffer.isNotEmpty()) {
-                                    ic.commitText(newWord, 1)
+                                    val prefix = composingBuffer.toString()
+                                    ic.commitText("$newWord ", 1)
                                     composingBuffer.clear()
+                                    um.onWordCommitted(newWord, prefix)
                                 } else {
                                     if (oldWord.isNotEmpty()) {
                                         ic.deleteSurroundingText(oldWord.length, 0)
                                     }
-                                    ic.commitText(newWord, 1)
+                                    ic.commitText("$newWord ", 1)
+                                    um.onWordCommitted(newWord)
                                 }
                                 currentContext = extractCurrentContext()
                             } catch (_: Throwable) {}
@@ -228,8 +264,15 @@ class SlashboardImeService : InputMethodService(),
                             } catch (_: Throwable) {}
                         }
                     )
+                    Spacer(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(settings.bottomSpaceHeight.dp)
+                            .background(androidx.compose.ui.graphics.Color.Transparent)
+                    )
                 }
             }
+        }
         }
         return composeView
     }

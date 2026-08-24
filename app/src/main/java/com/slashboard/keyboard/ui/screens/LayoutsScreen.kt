@@ -67,7 +67,7 @@ fun LayoutsScreen() {
     val settings by prefs.settingsFlow.collectAsState()
 
     val allLayouts = remember { KeyboardLayout.AvailableLayouts }
-    val activeTheme = remember(settings.themeId, settings.keyCornerRadius) {
+    val activeTheme = remember(settings.themeId, settings.keyCornerRadius, settings.showKeyBorders) {
         prefs.getActiveTheme()
     }
 

@@ -21,6 +21,8 @@ import com.slashboard.keyboard.R
 import com.slashboard.keyboard.SlashboardApp
 import com.slashboard.keyboard.data.repository.HelakuruSinglishParser
 import com.slashboard.keyboard.data.repository.SuggestionManager
+import com.slashboard.keyboard.util.ThemeEngine
+import com.slashboard.keyboard.data.model.SmartbarAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -69,13 +71,11 @@ open class SinhalaIME : InputMethodService() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var voiceInputManager: VoiceInputManager? = null
+    private var voiceOverlayController: VoiceOverlayController? = null
 
     // User-frequent emojis for Row 1
-    private val frequentEmojis = listOf(
-        "🥺", "😔", "💔", "😇", "😎", "😁", "😽", "❤️", "🤤", "😘",
-        "😂", "🤣", "🔥", "👍", "🙏", "😍", "✨", "👏", "💯", "💪",
-        "🤔", "🙌", "💙", "🌸", "☕", "👌"
-    )
+    private val defaultEmojis = listOf("🥺", "😔", "💔", "😇", "😎", "😁", "😽", "❤️", "🤤", "😘", "🔥", "😂", "👍", "🙏")
 
     override fun onCreate() {
         super.onCreate()
@@ -83,6 +83,8 @@ open class SinhalaIME : InputMethodService() {
             (application as? SlashboardApp)?.preferencesRepository?.settingsFlow?.collect {
                 applyCustomWallpaper()
                 applyKeyStyles()
+                applyKeyboardHeight()
+                setupUtilityBarActions()
             }
         }
     }
@@ -90,37 +92,59 @@ open class SinhalaIME : InputMethodService() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        voiceInputManager?.destroy()
     }
 
     override fun onCreateInputView(): View {
-        val root = layoutInflater.inflate(R.layout.keyboard_root, null)
-        rootView = root
+        val rootView = layoutInflater.inflate(R.layout.keyboard_root, null) as ViewGroup
+        this.rootView = rootView
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(rootView) { view, insets ->
+            val navBarInset = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())
+            view.setPadding(0, 0, 0, navBarInset.bottom)
+            insets
+        }
+
 
         val app = application as? SlashboardApp
         com.slashboard.keyboard.data.repository.SmartDictionaryEngine.initialize(this, app?.database)
 
-        bindViews(root)
-        setupEmojiBar()
-        setupKeyListeners(root)
+        voiceInputManager = VoiceInputManager(this)
+        voiceOverlayController = VoiceOverlayController(
+            rootView = rootView,
+            voiceInputManager = voiceInputManager!!,
+            onVoiceFinished = {
+                val micIcon = rootView.findViewById<ImageView>(R.id.btn_utility_mic)
+                micIcon?.clearColorFilter()
+            }
+        )
+
+        bindViews(rootView)
+
+        // 1. Populate Emojis
+        populateRecentEmojis(rootView)
+
+        // 2. Bind Keys with Dynamic Theme/Borders
+        bindKeyboardKeys(rootView)
+
+        setupKeyListeners(rootView)
         setupUtilityBarActions()
         updateLanguageState(isSinglishMode)
 
-        return root
+        return rootView
     }
 
     private fun bindViews(root: View) {
-        utilitySettingsBar = root.findViewById(R.id.utility_settings_bar)
-        wordSuggestionBar = root.findViewById(R.id.word_suggestion_bar)
+        utilitySettingsBar = root.findViewById(R.id.smartbar_idle_layer)
+        wordSuggestionBar = root.findViewById(R.id.smartbar_suggestion_layer)
         suggestionChipsContainer = root.findViewById(R.id.suggestion_chips_container)
-        emojiContainer = root.findViewById(R.id.emoji_container)
+        emojiContainer = root.findViewById(R.id.recent_emoji_container)
         spacebarLabel = root.findViewById(R.id.spacebar_label)
         shiftKey = root.findViewById(R.id.key_shift)
         langToggleBtn = root.findViewById(R.id.btn_lang_toggle)
-        wallpaperView = root.findViewById(R.id.wallpaper_view)
-        dimView = root.findViewById(R.id.dim_view)
+        wallpaperView = root.findViewById(R.id.keyboard_bg_image)
+        dimView = root.findViewById(R.id.keyboard_bg_dim)
 
         applyCustomWallpaper()
-        applyKeyStyles()
 
         // Ensure default state: utility_settings_bar VISIBLE, word_suggestion_bar GONE
         utilitySettingsBar?.apply {
@@ -137,67 +161,92 @@ open class SinhalaIME : InputMethodService() {
         isSuggestionStripVisible = false
     }
 
-    private fun applyCustomWallpaper() {
-        val app = application as? SlashboardApp ?: return
-        val settings = app.preferencesRepository.settingsFlow.value
-        val wallpaperPath = settings.customWallpaperPath
-
-        if (!wallpaperPath.isNullOrBlank()) {
-            val bitmap = com.slashboard.keyboard.data.repository.OnlineThemeRepository.loadWallpaperBitmap(wallpaperPath)
-            if (bitmap != null) {
-                wallpaperView?.setImageBitmap(bitmap)
-                wallpaperView?.alpha = 1.0f
-                wallpaperView?.visibility = View.VISIBLE
-                dimView?.visibility = View.VISIBLE
-                val alpha = settings.wallpaperDim.coerceIn(0.0f, 0.95f)
-                val dimColorInt = ((alpha * 255).toInt() shl 24) or 0x000000
-                dimView?.setBackgroundColor(dimColorInt)
-                rootView?.setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                return
-            }
-        }
-        wallpaperView?.setImageDrawable(null)
-        wallpaperView?.visibility = View.GONE
-        dimView?.visibility = View.GONE
-        rootView?.setBackgroundColor(0xFF1E1E2C.toInt())
-    }
-
-    /**
-     * ROW 1: Dedicated Frequently Used Emoji Bar (36dp height, permanently visible)
-     */
-    private fun setupEmojiBar() {
-        val container = emojiContainer ?: return
+    private fun populateRecentEmojis(rootView: View) {
+        val container = rootView.findViewById<LinearLayout>(R.id.recent_emoji_container) ?: return
         container.removeAllViews()
 
-        val paddingH = dpToPx(6f)
-        val paddingV = dpToPx(2f)
-        val marginH = dpToPx(3f)
-
-        frequentEmojis.forEach { emoji ->
+        for (emoji in defaultEmojis) {
             val tv = TextView(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    setMargins(marginH, 0, marginH, 0)
-                }
                 text = emoji
-                textSize = 18f
+                textSize = 22f
                 gravity = Gravity.CENTER
-                setPadding(paddingH, paddingV, paddingH, paddingV)
-                setBackgroundResource(R.drawable.bg_emoji_chip)
+                setPadding(30, 4, 30, 4)
                 isClickable = true
-                isFocusable = true
-                contentDescription = "Emoji $emoji"
-
+                isFocusable = false
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.MATCH_PARENT
+                )
+                setBackgroundResource(android.R.drawable.list_selector_background)
                 setOnClickListener {
-                    vibrateFeedback()
                     commitComposingText()
                     currentInputConnection?.commitText(emoji, 1)
+                    performHapticFeedback()
                 }
             }
             container.addView(tv)
         }
+    }
+
+    private fun setupRecentEmojiBar(rootView: View) {
+        populateRecentEmojis(rootView)
+    }
+
+    fun bindKeyboardKeys(rootView: View) {
+        applyKeyStyles()
+        applyKeyboardHeight()
+    }
+
+    private fun applyCustomWallpaper() {
+        val app = application as? SlashboardApp ?: return
+        val settings = app.preferencesRepository.settingsFlow.value
+        val wallpaperPath = settings.customWallpaperPath
+        
+        var bitmap: android.graphics.Bitmap? = null
+        if (!wallpaperPath.isNullOrBlank()) {
+            bitmap = com.slashboard.keyboard.data.repository.OnlineThemeRepository.loadWallpaperBitmap(wallpaperPath)
+        }
+        
+        rootView?.let {
+            com.slashboard.keyboard.util.ThemeEngine.applyCustomBackground(this, it, bitmap)
+            if (bitmap != null) {
+                it.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            } else {
+                it.setBackgroundColor(android.graphics.Color.parseColor("#1E1E2C"))
+            }
+        }
+    }
+
+    private fun setupEmojiBar() {
+        rootView?.let { populateRecentEmojis(it) }
+    }
+
+    private fun saveRecentEmoji(selectedEmoji: String) {
+        try {
+            val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(this)
+            val current = prefs.getString("frequent_emojis_csv", null)?.split(",")?.filter { it.isNotBlank() }?.toMutableList()
+                ?: defaultEmojis.toMutableList()
+            current.remove(selectedEmoji)
+            current.add(0, selectedEmoji)
+            val toSave = current.take(30).joinToString(",")
+            prefs.edit().putString("frequent_emojis_csv", toSave).apply()
+        } catch (_: Exception) {}
+    }
+
+    fun performHapticFeedback() {
+        try {
+            val app = application as? SlashboardApp
+            val settings = app?.preferencesRepository?.settingsFlow?.value
+            val hapticEnabled = settings?.hapticFeedback ?: true
+            if (!hapticEnabled) return
+
+            rootView?.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+            val intensity = settings?.hapticIntensity ?: 20
+            if (intensity > 0) {
+                val vibrator = getSystemService(VIBRATOR_SERVICE) as? android.os.Vibrator
+                vibrator?.vibrate(intensity.toLong())
+            }
+        } catch (_: Throwable) {}
     }
 
     /**
@@ -273,20 +322,18 @@ open class SinhalaIME : InputMethodService() {
     private fun updateSuggestions() {
         val sContainer = suggestionChipsContainer ?: return
         val currentQuery = composingBuffer.toString()
-
-        if (currentQuery.isEmpty()) {
-            showUtilityBar()
-            return
-        }
-
-        // Generate candidate suggestions
         val ic = currentInputConnection
         val fullText = ic?.getTextBeforeCursor(100, 0)?.toString() ?: ""
+        
+        val userLearningManager = com.slashboard.keyboard.data.repository.UserLearningManager.getInstance(this)
+
+        // Generate candidate suggestions
         val suggestions = SuggestionManager.getSuggestions(
             fullText = fullText,
             currentComposing = currentQuery,
-            isSinglish = isSinglishMode
-        )
+            isSinglish = isSinglishMode,
+            learningManager = userLearningManager
+        ).take(5)
 
         if (suggestions.isNotEmpty()) {
             SuggestionManager.renderSuggestionChips(
@@ -294,7 +341,7 @@ open class SinhalaIME : InputMethodService() {
                 suggestions = suggestions
             ) { selectedItem ->
                 vibrateFeedback()
-                commitSelectedSuggestion(selectedItem.replacement)
+                commitSelectedSuggestion(selectedItem.replacement, currentQuery)
             }
             showSuggestionBar()
         } else {
@@ -302,33 +349,33 @@ open class SinhalaIME : InputMethodService() {
         }
     }
 
-    private fun commitSelectedSuggestion(replacement: String) {
+    private fun commitSelectedSuggestion(replacement: String, inputPrefix: String = "") {
         val ic = currentInputConnection ?: return
         ic.commitText("$replacement ", 1)
-
-        val app = application as? SlashboardApp
-        com.slashboard.keyboard.data.repository.SmartDictionaryEngine.learnWord(
-            word = replacement,
-            isSinhala = isSinglishMode,
-            database = app?.database
-        )
-
         composingBuffer.clear()
-        showUtilityBar()
+        
+        com.slashboard.keyboard.data.repository.UserLearningManager.getInstance(this)
+            .onWordCommitted(replacement, inputPrefix)
+            
+        updateSuggestions()
     }
 
     private fun commitComposingText(overrideWith: String? = null) {
         val ic = currentInputConnection ?: return
         if (composingBuffer.isNotEmpty()) {
+            val prefix = composingBuffer.toString()
             val textToCommit = overrideWith ?: if (isSinglishMode) {
-                HelakuruSinglishParser.parse(composingBuffer.toString())
+                HelakuruSinglishParser.parse(prefix)
             } else {
-                composingBuffer.toString()
+                prefix
             }
             ic.commitText(textToCommit, 1)
             composingBuffer.clear()
+            
+            com.slashboard.keyboard.data.repository.UserLearningManager.getInstance(this)
+                .onWordCommitted(textToCommit, prefix)
         }
-        showUtilityBar()
+        updateSuggestions()
     }
 
     /**
@@ -373,9 +420,26 @@ open class SinhalaIME : InputMethodService() {
         }
 
         // ROW 5: Backspace Key
-        root.findViewById<ImageView>(R.id.key_backspace)?.setOnClickListener {
-            vibrateFeedback()
-            handleBackspace()
+        val backspaceKey = root.findViewById<ImageView>(R.id.key_backspace)
+        if (backspaceKey != null) {
+            val backspaceHandler = AcceleratedBackspaceHandler(
+                keyView = backspaceKey,
+                inputConnectionProvider = { currentInputConnection },
+                vibrateFeedback = { vibrateFeedback() }
+            )
+            backspaceKey.setOnTouchListener { _, event ->
+                when (event.action) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        backspaceHandler.onTouchDown()
+                        true
+                    }
+                    android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                        backspaceHandler.onTouchUpOrCancel()
+                        true
+                    }
+                    else -> false
+                }
+            }
         }
 
         // ROW 6: ?123 Symbols Toggle
@@ -533,50 +597,102 @@ open class SinhalaIME : InputMethodService() {
         }
     }
 
-    private fun setupUtilityBarActions() {
-        // Language Toggle [En] / [සිං]
-        langToggleBtn?.setOnClickListener {
-            vibrateFeedback()
-            toggleLanguage()
-        }
-
-        // Emoji
-        rootView?.findViewById<ImageView>(R.id.btn_utility_emoji)?.setOnClickListener {
-            vibrateFeedback()
-        }
-
-        // Settings
-        rootView?.findViewById<ImageView>(R.id.btn_utility_settings)?.setOnClickListener {
-            vibrateFeedback()
-            try {
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    private fun populateSmartbarActions(actions: List<String>) {
+        val container = rootView?.findViewById<LinearLayout>(R.id.smartbar_action_icons_container) ?: return
+        container.removeAllViews()
+        
+        for (actionId in actions) {
+            val action = SmartbarAction.fromId(actionId) ?: continue
+            val view: View = if (action == SmartbarAction.LANGUAGE_SWITCH) {
+                TextView(this).apply {
+                    id = R.id.btn_lang_toggle
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(34f), dpToPx(34f)).apply {
+                        setMargins(dpToPx(2f), 0, dpToPx(2f), 0)
+                    }
+                    gravity = Gravity.CENTER
+                    setTextColor(android.graphics.Color.WHITE)
+                    textSize = 13f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                    setBackgroundResource(R.drawable.bg_utility_icon)
+                    contentDescription = action.title
+                    
+                    langToggleBtn = this
+                    updateLanguageState(isSinglishMode)
+                    
+                    setOnClickListener {
+                        vibrateFeedback()
+                        toggleLanguage()
+                    }
                 }
-                startActivity(intent)
-            } catch (_: Exception) {}
+            } else {
+                ImageView(this).apply {
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(34f), dpToPx(34f)).apply {
+                        setMargins(dpToPx(2f), 0, dpToPx(2f), 0)
+                    }
+                    setPadding(dpToPx(7f), dpToPx(7f), dpToPx(7f), dpToPx(7f))
+                    
+                    val resId = resources.getIdentifier(action.iconResName, "drawable", packageName)
+                    if (resId != 0) {
+                        setImageResource(resId)
+                    }
+                    setBackgroundResource(R.drawable.bg_utility_icon)
+                    contentDescription = action.title
+                    
+                    if (action == SmartbarAction.VOICE_MIC) {
+                        id = R.id.btn_utility_mic
+                    }
+                    
+                    setOnClickListener {
+                        vibrateFeedback()
+                        handleSmartbarAction(action)
+                    }
+                }
+            }
+            container.addView(view)
         }
+    }
+    
+    private fun handleSmartbarAction(action: SmartbarAction) {
+        when(action) {
+            SmartbarAction.SETTINGS -> {
+                try {
+                    val intent = Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(intent)
+                } catch (_: Exception) {}
+            }
+            SmartbarAction.VOICE_MIC -> {
+                if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    val intent = Intent(this, com.slashboard.keyboard.VoicePermissionActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    startActivity(intent)
+                    return
+                }
+                if (voiceInputManager?.isListening == true) {
+                    voiceInputManager?.stopListening()
+                    voiceOverlayController?.hideVoiceOverlay()
+                } else {
+                    voiceOverlayController?.showVoiceOverlay(isSinglishMode)
+                    voiceInputManager?.startListening(isSinglishMode)
+                }
+            }
+            SmartbarAction.COLLAPSE -> {
+                requestHideSelf(0)
+            }
+            SmartbarAction.EMOJI, SmartbarAction.CLIPBOARD, SmartbarAction.THEME_PICKER, SmartbarAction.TEXT_EDIT -> {
+                // Not implemented yet
+            }
+            else -> {}
+        }
+    }
 
-        // Case (Aa)
-        rootView?.findViewById<ImageView>(R.id.btn_utility_case)?.setOnClickListener {
-            vibrateFeedback()
-            handleShiftToggle()
-        }
-
-        // Mic
-        rootView?.findViewById<ImageView>(R.id.btn_utility_mic)?.setOnClickListener {
-            vibrateFeedback()
-        }
-
-        // Clipboard
-        rootView?.findViewById<ImageView>(R.id.btn_utility_clipboard)?.setOnClickListener {
-            vibrateFeedback()
-        }
-
-        // Collapse
-        rootView?.findViewById<ImageView>(R.id.btn_utility_collapse)?.setOnClickListener {
-            vibrateFeedback()
-            requestHideSelf(0)
-        }
+    private fun setupUtilityBarActions() {
+        val app = application as? SlashboardApp
+        val actions = app?.preferencesRepository?.settingsFlow?.value?.smartbarActiveActions
+            ?: SmartbarAction.DEFAULT_ACTIVE.map { it.id }
+        populateSmartbarActions(actions)
     }
 
     private fun toggleLanguage() {
@@ -591,10 +707,7 @@ open class SinhalaIME : InputMethodService() {
     }
 
     private fun vibrateFeedback() {
-        try {
-            val vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator
-            vibrator?.vibrate(20)
-        } catch (_: Throwable) {}
+        performHapticFeedback()
     }
 
     private fun dpToPx(dp: Float): Int {
@@ -603,49 +716,61 @@ open class SinhalaIME : InputMethodService() {
 
     private fun applyKeyStyles() {
         val root = rootView ?: return
-        val app = application as? SlashboardApp ?: return
-        val settings = app.preferencesRepository.settingsFlow.value
-        val showBorders = settings.showKeyBorders
-        val cornerRadiusPx = dpToPx(settings.keyCornerRadius.toFloat()).toFloat()
-        val strokeWidthPx = if (showBorders) dpToPx(1f) else 0
-        val strokeColor = android.graphics.Color.parseColor("#38FFFFFF")
+        val app = application as? SlashboardApp
+        val settings = app?.preferencesRepository?.settingsFlow?.value
+        val cornerRadius = settings?.keyCornerRadius ?: 8
+        val bgAlpha = settings?.keyBackgroundAlpha ?: 1.0f
+        val borderAlpha = settings?.keyBorderAlpha ?: 1.0f
+        val activeTheme = com.slashboard.keyboard.data.model.KeyboardTheme.getThemeById(settings?.themeId ?: "cyber_violet")
 
-        fun createKeyDrawable(fillColor: Int, strokeCol: Int = strokeColor, radius: Float = cornerRadiusPx, strokeW: Int = strokeWidthPx): android.graphics.drawable.Drawable {
-            val content = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                setColor(fillColor)
-                cornerRadius = radius
-                if (strokeW > 0) {
-                    setStroke(strokeW, strokeCol)
-                }
-            }
-            val mask = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                setColor(android.graphics.Color.WHITE)
-                cornerRadius = radius
-            }
-            val rippleColorState = android.content.res.ColorStateList.valueOf(android.graphics.Color.parseColor("#4DFFFFFF"))
-            return android.graphics.drawable.RippleDrawable(rippleColorState, content, mask)
+        fun applyAlpha(color: androidx.compose.ui.graphics.Color, alphaScale: Float): Int {
+            val a = (color.alpha * alphaScale).coerceIn(0f, 1f)
+            return android.graphics.Color.argb(
+                (a * 255).toInt(),
+                (color.red * 255).toInt(),
+                (color.green * 255).toInt(),
+                (color.blue * 255).toInt()
+            )
         }
 
-        val normalKeyBg = { createKeyDrawable(android.graphics.Color.parseColor("#24FFFFFF")) }
-        val specialKeyBg = { createKeyDrawable(android.graphics.Color.parseColor("#36FFFFFF")) }
+        val normalColor = applyAlpha(activeTheme.keyBackground, bgAlpha)
+        val specialColor = applyAlpha(activeTheme.functionalKeyBackground, bgAlpha)
+        val borderColor = applyAlpha(activeTheme.keyBorderColor, borderAlpha)
+
+        val normalKeyBg = {
+            ThemeEngine.createKeyRippleDrawable(
+                context = this,
+                fillColor = normalColor,
+                strokeColor = borderColor,
+                radiusDp = cornerRadius.toFloat(),
+                strokeWidthDp = 1.2f
+            )
+        }
+        val specialKeyBg = {
+            ThemeEngine.createKeyRippleDrawable(
+                context = this,
+                fillColor = specialColor,
+                strokeColor = borderColor,
+                radiusDp = cornerRadius.toFloat(),
+                strokeWidthDp = 1.2f
+            )
+        }
         val spacebarBg = {
-            val strokeW = if (showBorders) dpToPx(1.5f) else 0
-            createKeyDrawable(
-                fillColor = android.graphics.Color.parseColor("#4A1525"),
-                strokeCol = android.graphics.Color.parseColor("#E91E63"),
-                radius = dpToPx(22f).toFloat(),
-                strokeW = strokeW
+            ThemeEngine.createKeyRippleDrawable(
+                context = this,
+                fillColor = specialColor,
+                strokeColor = applyAlpha(activeTheme.accentColor, borderAlpha),
+                radiusDp = 22f,
+                strokeWidthDp = 1.5f
             )
         }
         val enterBg = {
-            val strokeW = if (showBorders) dpToPx(1.5f) else 0
-            createKeyDrawable(
-                fillColor = android.graphics.Color.parseColor("#1565C0"),
-                strokeCol = android.graphics.Color.parseColor("#42A5F5"),
-                radius = dpToPx(22f).toFloat(),
-                strokeW = strokeW
+            ThemeEngine.createKeyRippleDrawable(
+                context = this,
+                fillColor = applyAlpha(activeTheme.accentColor, bgAlpha),
+                strokeColor = borderColor,
+                radiusDp = 22f,
+                strokeWidthDp = 1.5f
             )
         }
 
@@ -682,11 +807,83 @@ open class SinhalaIME : InputMethodService() {
         root.findViewById<View>(R.id.key_enter)?.background = enterBg()
     }
 
+    /**
+     * Dynamically updates the layout parameters and row heights of the root container
+     * based on user height scale settings.
+     */
+    private fun applyKeyboardHeight() {
+        val root = rootView ?: return
+        val app = application as? SlashboardApp
+        val settings = app?.preferencesRepository?.settingsFlow?.value ?: return
+        val scale = settings.heightScale.coerceIn(0.70f, 1.40f)
+
+        // Calculate proportional heights in px
+        val headerHeightPx = dpToPx(42f * scale)
+        val emojiHeightPx = dpToPx(38f * scale)
+        val numRowHeightPx = dpToPx(42f * scale)
+        val charRowHeightPx = dpToPx(46f * scale)
+
+        // Adjust root container layout params if needed
+        val rootContainer = root.findViewById<FrameLayout>(R.id.keyboard_root_container) ?: root as? FrameLayout
+        rootContainer?.let { container ->
+            val currentLp = container.layoutParams ?: ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            container.layoutParams = currentLp
+            container.setPadding(0, 0, 0, dpToPx(settings.bottomSpaceHeight.toFloat()))
+        }
+
+        // Dynamically resize Header Bar
+        (root.findViewById<View>(R.id.smartbar_container) ?: root.findViewById<View>(R.id.smartbar_idle_layer))?.let { v ->
+            val lp = v.layoutParams ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, headerHeightPx)
+            lp.height = headerHeightPx
+            v.layoutParams = lp
+        }
+
+        // Dynamically resize Number Row
+        root.findViewById<View>(R.id.number_row)?.let { v ->
+            val lp = v.layoutParams ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, numRowHeightPx)
+            lp.height = numRowHeightPx
+            v.layoutParams = lp
+        }
+
+        // Dynamically resize QWERTY Rows
+        root.findViewById<View>(R.id.row_qwerty_top)?.let { v ->
+            val lp = v.layoutParams ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, charRowHeightPx)
+            lp.height = charRowHeightPx
+            v.layoutParams = lp
+        }
+
+        root.findViewById<View>(R.id.row_qwerty_home)?.let { v ->
+            val lp = v.layoutParams ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, charRowHeightPx)
+            lp.height = charRowHeightPx
+            v.layoutParams = lp
+        }
+
+        root.findViewById<View>(R.id.row_qwerty_bottom)?.let { v ->
+            val lp = v.layoutParams ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, charRowHeightPx)
+            lp.height = charRowHeightPx
+            v.layoutParams = lp
+        }
+
+        root.findViewById<View>(R.id.row_actions)?.let { v ->
+            val lp = v.layoutParams ?: ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, charRowHeightPx)
+            lp.height = charRowHeightPx
+            v.layoutParams = lp
+        }
+
+        root.requestLayout()
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        voiceInputManager?.setInputConnection(currentInputConnection)
         composingBuffer.clear()
         applyCustomWallpaper()
         applyKeyStyles()
+        applyKeyboardHeight()
+        rootView?.let { setupRecentEmojiBar(it) }
         // Reset state directly
         utilitySettingsBar?.apply {
             visibility = View.VISIBLE

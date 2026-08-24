@@ -2,6 +2,7 @@ package com.slashboard.keyboard.ui.components
 
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.Image
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import com.slashboard.keyboard.data.repository.HelakuruSinglishParser
 import com.slashboard.keyboard.data.repository.KeyboardSettings
 import com.slashboard.keyboard.data.repository.OnlineThemeRepository
 import com.slashboard.keyboard.data.repository.SuggestionManager
+import com.slashboard.keyboard.data.repository.UserLearningManager
 
 enum class KeyboardMode {
     ALPHA,
@@ -87,6 +89,9 @@ fun VirtualKeyboard(
     val totalKeyboardHeight = (270 * settings.heightScale).dp
 
     // Compute smart suggestions via unified SuggestionManager
+    val context = LocalContext.current
+    val learningManager = remember { UserLearningManager.getInstance(context) }
+    
     val suggestions = remember(currentWord, fullText, dictionaryWords, settings.autoCorrect, isSinglish) {
         if (!settings.autoCorrect) {
             emptyList()
@@ -95,7 +100,8 @@ fun VirtualKeyboard(
                 fullText = fullText,
                 currentComposing = currentWord,
                 isSinglish = isSinglish,
-                userDictionary = dictionaryWords
+                userDictionary = dictionaryWords,
+                learningManager = learningManager
             )
         }
     }
@@ -168,12 +174,6 @@ fun VirtualKeyboard(
                 activeLayoutName = activeLayout.name,
                 onOpenClipboard = { keyboardMode = KeyboardMode.CLIPBOARD },
                 onOpenEmoji = { keyboardMode = KeyboardMode.EMOJI },
-                onCycleTheme = {
-                    val allThemes = KeyboardTheme.PresetThemes
-                    val curIdx = allThemes.indexOfFirst { it.id == settings.themeId }
-                    val nextIdx = if (curIdx >= 0) (curIdx + 1) % allThemes.size else 0
-                    prefs.updateThemeId(allThemes[nextIdx].id)
-                },
                 onCycleLayout = {
                     val allLayouts = KeyboardLayout.AvailableLayouts
                     val curIdx = allLayouts.indexOfFirst { it.id == settings.layoutId }

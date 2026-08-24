@@ -13,21 +13,6 @@ import com.slashboard.keyboard.R
 import com.slashboard.keyboard.data.model.DictionaryWord
 import com.slashboard.keyboard.ui.components.SuggestionItem
 
-/**
- * Offline-First High-Speed Dual-Language Word Suggestion Pipeline & View Binder.
- *
- * Capabilities:
- * 1. Singlish Mode:
- *    - Real-time Helakuru transliteration candidate generation (e.g. "la" -> "ල", "oya" -> "ඔයා").
- *    - In-memory Trie prefix matching for frequent Sinhala vocabulary (e.g. "ල" -> ["ලංකාව", "ලස්සන", "ලෝකය", "ලැබේ"]).
- *    - Merges direct transliterations + prefix completions, ranked by frequency.
- * 2. English Mode:
- *    - Shortcut expansion (e.g. "brb" -> "Be right back!").
- *    - In-memory Trie prefix search (e.g. "be" -> ["beautiful", "because", "before", "between", "best"]).
- * 3. Dynamic UI Rendering:
- *    - Inflates clickable 15sp white chips inside `#suggestion_container` with ripple backgrounds.
- *    - On-tap commits full word + trailing space, triggers smart self-learning, and transitions back to `#utility_bar`.
- */
 object SuggestionManager {
 
     /**
@@ -37,16 +22,73 @@ object SuggestionManager {
         fullText: String,
         currentComposing: String,
         isSinglish: Boolean,
-        userDictionary: List<DictionaryWord> = emptyList()
+        userDictionary: List<DictionaryWord> = emptyList(),
+        learningManager: UserLearningManager? = null
     ): List<SuggestionItem> {
         val trimmedComposing = currentComposing.trim()
-        if (trimmedComposing.isEmpty()) return emptyList()
-
         val results = LinkedHashSet<SuggestionItem>()
+        
+        // 1. Next-Word Prediction (Before user types any character)
+        if (trimmedComposing.isEmpty()) {
+            if (learningManager != null) {
+                val nextWords = learningManager.getNextWords()
+                for (bw in nextWords.take(3)) {
+                    results.add(
+                        SuggestionItem(
+                            display = bw.nextWord,
+                            replacement = bw.nextWord,
+                            isPrimary = results.isEmpty()
+                        )
+                    )
+                }
+            }
+            return results.toList()
+        }
+
+        // Candidates map: Word -> Score
+        val scoredCandidates = mutableMapOf<String, Long>()
+
+        // Helper to add and score a candidate
+        fun addCandidate(word: String, baseScore: Long, isShortcut: Boolean = false) {
+            if (word.isBlank()) return
+            var finalScore = baseScore
+            if (learningManager != null) {
+                val learned = learningManager.getLearnedWord(word)
+                if (learned != null) {
+                    val userFreq = learned.frequency
+                    val recencyBonus = if (System.currentTimeMillis() - learned.lastUsed < 86400000) 50L else 0L // Bonus if used in last 24h
+                    finalScore += (userFreq * 15L) + recencyBonus
+                }
+                
+                // Bigram Match Bonus
+                val prevWord = learningManager.lastCommittedWord
+                if (prevWord != null) {
+                    val bigramFreq = learningManager.getBigramFrequency(prevWord, word)
+                    if (bigramFreq > 0) {
+                        finalScore += (bigramFreq * 25L)
+                    }
+                }
+            }
+            
+            // Add or update max score
+            val currentScore = scoredCandidates[word] ?: 0L
+            if (finalScore > currentScore) {
+                scoredCandidates[word] = finalScore
+            }
+        }
+
+        // A. User Learning Predictions (Prefix Match)
+        if (learningManager != null) {
+            val learnedPredictions = learningManager.getPredictions(trimmedComposing)
+            for (learned in learnedPredictions) {
+                val recencyBonus = if (System.currentTimeMillis() - learned.lastUsed < 86400000) 50L else 0L
+                val score = (learned.frequency * 15L) + recencyBonus + 10000L // Massive boost for learned prefix matches
+                addCandidate(learned.word, score)
+            }
+        }
 
         if (isSinglish) {
-            // 1. Singlish Mode
-            // A. Check user dictionary shortcuts first
+            // 2. Singlish Mode
             val shortcutMatch = userDictionary.find { it.shortcut.equals(trimmedComposing, ignoreCase = true) }
             if (shortcutMatch != null) {
                 results.add(
@@ -59,49 +101,23 @@ object SuggestionManager {
                 )
             }
 
-            // B. Direct phonetic transliterations
             val transliterations = HelakuruSinglishParser.getSuggestions(trimmedComposing)
             if (transliterations.isNotEmpty()) {
                 val primary = transliterations.first()
-                results.add(
-                    SuggestionItem(
-                        display = primary,
-                        replacement = primary,
-                        isPrimary = results.isEmpty()
-                    )
-                )
+                addCandidate(primary, 5000L) // Base score for exact transliteration
 
-                // C. Query Sinhala Trie for words starting with the transliterated prefix
-                val prefixQuery = primary.trim()
-                val trieCompletions = SmartDictionaryEngine.searchSinhala(prefixQuery, limit = 5)
-                for (candidate in trieCompletions) {
-                    results.add(
-                        SuggestionItem(
-                            display = candidate.word,
-                            replacement = candidate.word,
-                            isPrimary = false
-                        )
-                    )
-                    if (results.size >= 5) break
+                val trieCompletions = SmartDictionaryEngine.searchSinhala(primary.trim(), limit = 10)
+                for ((index, candidate) in trieCompletions.withIndex()) {
+                    addCandidate(candidate.word, 1000L - index)
                 }
 
-                // D. Append other transliteration alternatives if space remains
-                for (alt in transliterations.drop(1)) {
-                    if (results.size >= 5) break
-                    results.add(
-                        SuggestionItem(
-                            display = alt,
-                            replacement = alt,
-                            isPrimary = false
-                        )
-                    )
+                for ((index, alt) in transliterations.drop(1).withIndex()) {
+                    addCandidate(alt, 500L - index)
                 }
             }
         } else {
-            // 2. English Mode
+            // 3. English Mode
             val lower = trimmedComposing.lowercase()
-
-            // A. User dictionary shortcut expansion
             val shortcutMatch = userDictionary.find { it.shortcut.equals(lower, ignoreCase = true) }
             if (shortcutMatch != null) {
                 results.add(
@@ -114,41 +130,42 @@ object SuggestionManager {
                 )
             }
 
-            // B. In-Memory English Trie prefix completions
-            val trieCompletions = SmartDictionaryEngine.searchEnglish(lower, limit = 5)
+            val trieCompletions = SmartDictionaryEngine.searchEnglish(lower, limit = 10)
             for ((index, candidate) in trieCompletions.withIndex()) {
-                results.add(
-                    SuggestionItem(
-                        display = candidate.word,
-                        replacement = candidate.word,
-                        isPrimary = results.isEmpty() && index == 0
-                    )
-                )
-                if (results.size >= 5) break
+                addCandidate(candidate.word, 1000L - index)
             }
 
-            // C. Fallback: If no trie completions, offer raw text
-            if (results.isEmpty()) {
-                results.add(
-                    SuggestionItem(
-                        display = trimmedComposing,
-                        replacement = trimmedComposing,
-                        isPrimary = true
-                    )
-                )
+            if (scoredCandidates.isEmpty()) {
+                addCandidate(trimmedComposing, 5000L)
             }
+        }
+
+        // Sort candidates by score descending and take top 5
+        val sortedCandidates = scoredCandidates.entries.sortedByDescending { it.value }.take(5)
+        for ((index, entry) in sortedCandidates.withIndex()) {
+            results.add(
+                SuggestionItem(
+                    display = entry.key,
+                    replacement = entry.key,
+                    isPrimary = results.isEmpty() && index == 0
+                )
+            )
+        }
+
+        // If no results, offer raw text
+        if (results.isEmpty() && trimmedComposing.isNotEmpty()) {
+            results.add(
+                SuggestionItem(
+                    display = trimmedComposing,
+                    replacement = trimmedComposing,
+                    isPrimary = true
+                )
+            )
         }
 
         return results.take(5).toList()
     }
 
-    /**
-     * Programmatically populates the suggestion container LinearLayout with styled, clickable TextView chips.
-     *
-     * @param container The #suggestion_container LinearLayout inside HorizontalScrollView
-     * @param suggestions List of candidate SuggestionItem items
-     * @param onSelect Callback invoked when a suggestion chip is tapped
-     */
     fun renderSuggestionChips(
         container: LinearLayout,
         suggestions: List<SuggestionItem>,
@@ -156,13 +173,12 @@ object SuggestionManager {
     ) {
         val context = container.context
         container.removeAllViews()
-
         if (suggestions.isEmpty()) {
             container.visibility = View.GONE
             return
         }
-        container.visibility = View.VISIBLE
 
+        container.visibility = View.VISIBLE
         val horizontalPadding = dpToPx(context, 14f)
         val verticalPadding = dpToPx(context, 6f)
         val marginHorizontal = dpToPx(context, 4f)
@@ -175,7 +191,6 @@ object SuggestionManager {
                 ).apply {
                     setMargins(marginHorizontal, 0, marginHorizontal, 0)
                 }
-
                 text = item.display
                 setTextColor(Color.WHITE)
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
@@ -183,7 +198,6 @@ object SuggestionManager {
                 gravity = Gravity.CENTER
                 setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
 
-                // Background ripple and pill shape
                 try {
                     setBackgroundResource(R.drawable.bg_suggestion_chip)
                 } catch (e: Exception) {
@@ -191,19 +205,15 @@ object SuggestionManager {
                 }
 
                 if (item.isPrimary) {
-                    // Subtle highlight for primary candidate
                     setTextColor(Color.parseColor("#FFE082"))
                 }
-
                 isClickable = true
                 isFocusable = true
                 contentDescription = "Suggestion: ${item.display}"
-
                 setOnClickListener {
                     onSelect(item)
                 }
             }
-
             container.addView(chip)
         }
     }
